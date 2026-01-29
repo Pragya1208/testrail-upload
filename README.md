@@ -77,13 +77,13 @@ Use **npx** to run from a GitHub repo; npx will clone and build automatically
 ### Local clone (optional)
 
 ```bash
-git clone https://github.com/your-org/testrail-upload-mcp.git
-cd testrail-upload-mcp
+git clone https://github.com/Pragya1208/testrail-upload.git
+cd testrail-upload
 npm install
 npm run build
 ```
 
-Then point your MCP config at `.../testrail-upload-mcp/dist/index.js` (see [INTEGRATION.md](./INTEGRATION.md)).
+Then point your MCP config at `.../testrail-upload/dist/index.js` (see [INTEGRATION.md](./INTEGRATION.md)).
 
 ## Usage (MCP)
 

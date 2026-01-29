@@ -19,7 +19,7 @@ import { TEMPLATE_NAME } from "./mappings.js";
 
 dotenv.config();
 
-const MCP_SERVER_NAME = "testrail-upload-mcp";
+const MCP_SERVER_NAME = "testrail-upload";
 const MCP_SERVER_VERSION = "1.0.0";
 
 const server = new Server(

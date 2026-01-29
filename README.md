@@ -63,7 +63,7 @@ Use **npx** to run from a GitHub repo; npx will clone and build automatically
   "mcpServers": {
     "testrail-upload": {
       "command": "npx",
-      "args": ["github:YOUR_ORG/testrail-upload-mcp"],
+      "args": ["github:Pragya1208/testrail-upload"],
       "env": {
         "TESTRAIL_URL": "https://your-instance.testrail.com",
         "TESTRAIL_USERNAME": "your-email@example.com",
@@ -73,8 +73,6 @@ Use **npx** to run from a GitHub repo; npx will clone and build automatically
   }
 }
 ```
-
-Replace `YOUR_ORG` with your GitHub org or username.
 
 ### Local clone (optional)
 

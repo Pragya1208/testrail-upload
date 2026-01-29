@@ -17,7 +17,7 @@ export interface ValidationResult {
   rowsMissingTitle: number[];
   rowsMissingFramework: number[];
   rowsMissingType: number[];
-  suggestedOverrides: MandatoryOverrides | null;
+  suggestedOverrides: Partial<MandatoryOverrides> | null;
   message: string;
 }
 

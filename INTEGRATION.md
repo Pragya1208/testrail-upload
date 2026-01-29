@@ -65,7 +65,7 @@ If you prefer a local clone instead of npx:
   "mcpServers": {
     "testrail-upload": {
       "command": "node",
-      "args": ["/absolute/path/to/testrail-upload-mcp/dist/index.js"],
+      "args": ["/absolute/path/to/testrail-upload/dist/index.js"],
       "env": {
         "TESTRAIL_URL": "https://your-instance.testrail.com",
         "TESTRAIL_USERNAME": "your-email@example.com",
@@ -116,7 +116,7 @@ If your client uses MCP and expects a JSON config (e.g. for a hosted MCP gateway
 ```json
 {
   "command": "npx",
-  "args": ["github:YOUR_ORG/testrail-upload-mcp"],
+  "args": ["github:Pragya1208/testrail-upload"],
   "env": {
     "TESTRAIL_URL": "https://your-instance.testrail.com",
     "TESTRAIL_USERNAME": "your-email@example.com",
@@ -155,7 +155,7 @@ Restart or reload Windsurf so it discovers the new server.
 
 ## 4. Shared JSON snippet (all editors)
 
-For teams that store config in Git or share snippets, you can provide a **minimal JSON snippet** that users paste into their editor’s MCP config. Replace YOUR_ORG with your GitHub org or username and set TestRail env vars.
+For teams that store config in Git or share snippets, you can provide a **minimal JSON snippet** that users paste into their editor’s MCP config. Set TestRail env vars.
 
 ### Snippet for Cursor / Claude / Windsurf
 
@@ -171,7 +171,7 @@ For teams that store config in Git or share snippets, you can provide a **minima
 }
 ```
 
-**Replace:** `YOUR_ORG`, `TESTRAIL_URL`, `TESTRAIL_USERNAME`, `TESTRAIL_API_KEY` (or `TESTRAIL_PASSWORD`). No local path or install required.
+**Replace:** `TESTRAIL_URL`, `TESTRAIL_USERNAME`, `TESTRAIL_API_KEY` (or `TESTRAIL_PASSWORD`). No local path or install required.
 
 ---
 
@@ -210,7 +210,7 @@ For teams that store config in Git or share snippets, you can provide a **minima
 | Issue | Check |
 |-------|--------|
 | "Missing TestRail credentials" | `TESTRAIL_URL`, `TESTRAIL_USERNAME`, and `TESTRAIL_API_KEY` (or `TESTRAIL_PASSWORD`) must be set in the MCP server’s environment. |
-| Tool not listed | Restart the editor / MCP client; ensure `args` is `["github:YOUR_ORG/testrail-upload-mcp"]` and Node.js ≥ 18 is installed. |
+| Tool not listed | Restart the editor / MCP client; ensure `args` is `["github:Pragya1208/testrail-upload"]` and Node.js ≥ 18 is installed. |
 | "Validation failed" | Provide `section_id` and, if the CSV doesn’t have them, `default_framework`, `default_type`, and optionally `default_pod` and `default_references`. Use `testrail_upload_help` for the full list. |
 | Template / custom fields | If your project uses a different template or custom field names, set `template_id` and, when we support it, custom field keys in the tool args or env. |
 

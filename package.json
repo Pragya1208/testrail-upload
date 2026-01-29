@@ -1,11 +1,11 @@
 {
-  "name": "testrail-upload-mcp",
+  "name": "testrail-upload",
   "version": "1.0.0",
   "description": "MCP server for uploading test cases from CSV to TestRail",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "testrail-upload-mcp": "dist/index.js"
+    "testrail-upload": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -29,7 +29,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_ORG/testrail-upload-mcp"
+    "url": "https://github.com/Pragya1208/testrail-upload"
   },
   "keywords": ["mcp", "testrail", "test-cases", "csv", "cursor", "claude", "windsurf"],
   "license": "MIT"

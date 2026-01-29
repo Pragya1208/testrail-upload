@@ -57,7 +57,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           section_id: {
             type: "number",
             description:
-              "TestRail section ID where cases will be added (mandatory)",
+              "TestRail section ID where cases will be added. Use section_id OR group_id (from URL e.g. group_id=568).",
+          },
+          group_id: {
+            type: "number",
+            description:
+              "TestRail group/section ID from the suite URL (e.g. ...&group_id=568). Used as section_id when section_id not provided.",
           },
           project_id: {
             type: "number",
@@ -105,7 +110,23 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             default: false,
           },
         },
-        required: ["section_id"],
+        required: [],
+      },
+    },
+    {
+      name: "convert_csv_to_testrail_format",
+      description:
+        "Convert user CSV to a clean TestRail-ready CSV with mandatory columns (Title, Framework, Type, POD, References, Preconditions, Steps, Expected Results, Priority, Test Data). Does NOT assume defaults; returns the cleaned CSV and a report of which rows have which mandatory fields missing so the user can fill them.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          csv_file_path: { type: "string", description: "Path to the CSV file" },
+          csv_content: { type: "string", description: "Raw CSV content" },
+          output_path: {
+            type: "string",
+            description: "Optional path to write the cleaned CSV file",
+          },
+        },
       },
     },
     {
@@ -131,6 +152,83 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             type: "text" as const,
             text: formatMandatoryHelp(),
+          },
+        ],
+      };
+    }
+
+    if (name === "convert_csv_to_testrail_format") {
+      let csvContent: string;
+      if (argsObj.csv_file_path && typeof argsObj.csv_file_path === "string") {
+        csvContent = await fs.readFile(argsObj.csv_file_path, "utf-8");
+      } else if (argsObj.csv_content && typeof argsObj.csv_content === "string") {
+        csvContent = argsObj.csv_content;
+      } else {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Error: Provide csv_file_path or csv_content for convert_csv_to_testrail_format.",
+            },
+          ],
+        };
+      }
+      const parseResult = parseCSV(csvContent);
+      if (parseResult.errors.length > 0) {
+        return {
+          content: [
+            { type: "text" as const, text: `CSV parse errors:\n${parseResult.errors.join("\n")}` },
+          ],
+        };
+      }
+      const cleanHeader =
+        "Title,Framework,Type,POD,References,Preconditions,Steps,Expected Results,Priority,Test Data";
+      const escape = (s: string) =>
+        s.includes(",") || s.includes('"') || s.includes("\n")
+          ? `"${s.replace(/"/g, '""')}"`
+          : s;
+      const missingPerRow: string[] = [];
+      const cleanRows = parseResult.rows.map((r, i) => {
+        const title = r.title?.trim() ?? "";
+        const framework = r.framework?.trim() ?? "";
+        const type = r.type?.trim() ?? "";
+        const pod = "";
+        const refs = r.references?.trim() ?? "";
+        const pre = r.preconditions?.trim() ?? "";
+        const steps = r.steps?.trim() ?? "";
+        const expected = r.expected_results?.trim() ?? "";
+        const priority = r.priority?.trim() ?? "";
+        const testData = r.test_data?.trim() ?? "";
+        const missing: string[] = [];
+        if (!title) missing.push("Title");
+        if (!framework) missing.push("Framework");
+        if (!type) missing.push("Type");
+        if (!refs) missing.push("References");
+        if (missing.length) missingPerRow.push(`Row ${i + 1}: ${missing.join(", ")}`);
+        return [title, framework, type, pod, refs, pre, steps, expected, priority, testData]
+          .map(escape)
+          .join(",");
+      });
+      const cleanCsv = cleanHeader + "\n" + cleanRows.join("\n");
+      const outputPath =
+        typeof argsObj.output_path === "string" ? argsObj.output_path : undefined;
+      if (outputPath) await fs.writeFile(outputPath, cleanCsv);
+      const report =
+        missingPerRow.length > 0
+          ? "Missing mandatory fields (do not assume defaults; please fill or provide when uploading):\n" +
+            missingPerRow.join("\n")
+          : "All mandatory columns have values. You can upload after setting section_id or group_id.";
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text:
+              "Cleaned CSV with mandatory columns (Title, Framework, Type, POD, References, Preconditions, Steps, Expected Results, Priority, Test Data):\n\n" +
+              report +
+              "\n\n" +
+              (outputPath ? `Cleaned CSV written to: ${outputPath}\n\n` : "") +
+              "First 3 rows of cleaned CSV:\n" +
+              cleanCsv.split("\n").slice(0, 4).join("\n"),
           },
         ],
       };
@@ -171,8 +269,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
+    const sectionIdArg =
+      typeof argsObj.section_id === "number"
+        ? argsObj.section_id
+        : typeof argsObj.group_id === "number"
+          ? argsObj.group_id
+          : undefined;
     const overrides: MandatoryOverrides = {
-      section_id: Number(argsObj.section_id),
+      section_id: sectionIdArg as number,
       default_pod: typeof argsObj.default_pod === "string" ? argsObj.default_pod : undefined,
       default_references:
         typeof argsObj.default_references === "string"
@@ -191,6 +295,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ? argsObj.default_status
           : "Design",
     };
+
+    if (sectionIdArg == null) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text:
+              "Error: Provide either section_id or group_id (e.g. from TestRail URL: ...&group_id=568). Do not assume defaults.",
+          },
+        ],
+      };
+    }
 
     const validation = validateRowsAndOverrides(parseResult.rows, overrides);
 
@@ -211,7 +327,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             type: "text" as const,
             text:
-              "Validation failed. Please provide missing mandatory fields (e.g. section_id, default_framework, default_type if not in CSV). Ensure every row has a Title.\n\n" +
+              "Validation failed. Do not assume defaults. Please provide the following so we can proceed:\n\n" +
               validation.message,
           },
         ],
@@ -230,7 +346,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       framework: r.framework?.trim() || defaultFramework || r.framework,
       type: r.type?.trim() || defaultType || r.type,
     }));
-    const sectionId = Number(argsObj.section_id);
+    const sectionId = Number(sectionIdArg);
     const projectId =
       typeof argsObj.project_id === "number" ? argsObj.project_id : undefined;
     let templateId =

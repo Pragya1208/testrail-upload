@@ -74,6 +74,8 @@ Use **npx** to run from a GitHub repo; npx will clone and build automatically
 }
 ```
 
+Replace `Pragya1208` with your GitHub username if you forked the repo.
+
 ### Local clone (optional)
 
 ```bash
@@ -87,16 +89,62 @@ Then point your MCP config at `.../testrail-upload/dist/index.js` (see [INTEGRAT
 
 ## Usage (MCP)
 
-Use the tool `upload_test_cases_to_testrail` with:
+### How to use in Cursor
+
+1. **Add the MCP server** to Cursor config (`~/.cursor/mcp.json`):
+   ```json
+   {
+     "mcpServers": {
+       "testrail-upload": {
+         "command": "npx",
+         "args": ["github:Pragya1208/testrail-upload"],
+         "env": {
+           "TESTRAIL_URL": "https://your-instance.testrail.com",
+           "TESTRAIL_USERNAME": "your-email@example.com",
+           "TESTRAIL_API_KEY": "your-api-key"
+         }
+       }
+     }
+   }
+   ```
+2. **Restart Cursor** (or reload the window) so it connects to the MCP server.
+3. **Call the tools from chat** – you don’t click a button; you ask in natural language and the AI uses the tools when relevant. Examples:
+   - *“Run testrail_upload_help and show me the mandatory fields and mapping.”*
+   - *“Upload test cases from the CSV at /path/to/my-tests.csv to TestRail section 12345, project 5, with default POD Journeys and default references CHAN-7186.”*
+   - *“Validate only (no upload): parse the CSV at ./tests.csv for section_id 12345 and default_framework RestAssured. Use dry_run.”*
+
+### Tools
+
+| Tool | Purpose |
+|------|--------|
+| **testrail_upload_help** | Returns mandatory fields and CSV → TestRail mapping (no upload). |
+| **upload_test_cases_to_testrail** | Parses CSV and uploads test cases to TestRail. |
+
+**upload_test_cases_to_testrail** parameters:
 
 - **csv_file_path** or **csv_content** – input CSV
-- **section_id** (required) – TestRail section ID
+- **section_id** or **group_id** (one required) – TestRail section/group ID. Use **group_id** from the suite URL (e.g. `...&group_id=568`).
 - **project_id** (optional) – used to resolve "Test Case (Text)" template
 - **template_id** (optional) – override template ID
-- **default_pod**, **default_references**, **default_framework**, **default_type** – applied when CSV row is missing
+- **default_pod**, **default_references**, **default_framework**, **default_type** – only used when you explicitly pass them; no defaults are assumed for missing CSV fields. If mandatory fields are missing, the tool prompts you to provide them.
 - **dry_run** – `true` to only parse/validate, no upload
 
-Helper tool: `testrail_upload_help` – returns mandatory fields and mapping docs.
+**convert_csv_to_testrail_format** – Converts your CSV to a clean TestRail-ready CSV with mandatory columns (Title, Framework, Type, POD, References, Preconditions, Steps, Expected Results, Priority, Test Data). Does not assume defaults; returns a missing-fields report so you can fill or provide values when uploading.
+
+## Troubleshooting: npx exits immediately with no output
+
+If `npx github:Pragya1208/testrail-upload` returns to the prompt with no message:
+
+1. **Capture stderr:** Run `npx github:Pragya1208/testrail-upload 2>&1` and check for errors.
+2. **Run from a local clone** to see install + build + run:
+   ```bash
+   git clone https://github.com/Pragya1208/testrail-upload.git && cd testrail-upload
+   npm install
+   npm run build
+   node dist/index.js
+   ```
+   You should see `[testrail-upload] Starting MCP server...` then `testrail-upload v1.0.0 started`. If you see an error instead, fix that (e.g. Node version, missing deps).
+3. **Ensure your GitHub repo has the latest code** (including the startup log and `prepare` script in package.json).
 
 ## Integration
 

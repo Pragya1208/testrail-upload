@@ -20,7 +20,7 @@ Run the MCP server with **npx** from a GitHub repo. npx will clone and install t
   "mcpServers": {
     "testrail-upload": {
       "command": "npx",
-      "args": ["github:YOUR_ORG/testrail-upload-mcp"],
+      "args": ["github:Pragya1208/testrail-upload"],
       "env": {
         "TESTRAIL_URL": "https://your-instance.testrail.com",
         "TESTRAIL_USERNAME": "your-email@example.com",
@@ -30,9 +30,6 @@ Run the MCP server with **npx** from a GitHub repo. npx will clone and install t
   }
 }
 ```
-
-Replace `YOUR_ORG` with your GitHub org or username.
-
 ---
 
 ## 1. Cursor
@@ -48,7 +45,7 @@ Use the **npx** config above under `mcpServers`:
   "mcpServers": {
     "testrail-upload": {
       "command": "npx",
-      "args": ["github:YOUR_ORG/testrail-upload-mcp"],
+      "args": ["github:Pragya1208/testrail-upload"],
       "env": {
         "TESTRAIL_URL": "https://your-instance.testrail.com",
         "TESTRAIL_USERNAME": "your-email@example.com",
@@ -99,7 +96,7 @@ Add the MCP server using **npx** (no local install):
   "mcpServers": {
     "testrail-upload": {
       "command": "npx",
-      "args": ["github:YOUR_ORG/testrail-upload-mcp"],
+      "args": ["github:Pragya1208/testrail-upload"],
       "env": {
         "TESTRAIL_URL": "https://your-instance.testrail.com",
         "TESTRAIL_USERNAME": "your-email@example.com",
@@ -141,7 +138,7 @@ Windsurf uses MCP servers configured via JSON. Add the server with **npx** (no l
   "mcpServers": {
     "testrail-upload": {
       "command": "npx",
-      "args": ["github:YOUR_ORG/testrail-upload-mcp"],
+      "args": ["github:Pragya1208/testrail-upload"],
       "env": {
         "TESTRAIL_URL": "https://your-instance.testrail.com",
         "TESTRAIL_USERNAME": "your-email@example.com",
@@ -165,7 +162,7 @@ For teams that store config in Git or share snippets, you can provide a **minima
 ```json
 "testrail-upload": {
   "command": "npx",
-  "args": ["github:YOUR_ORG/testrail-upload-mcp"],
+  "args": ["github:Pragya1208/testrail-upload"],
   "env": {
     "TESTRAIL_URL": "https://YOUR_INSTANCE.testrail.com",
     "TESTRAIL_USERNAME": "YOUR_EMAIL",

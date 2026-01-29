@@ -94,11 +94,11 @@ export function parseCSV(content: string): ParseResult {
         const val = raw[csvCol]?.trim();
         if (val === undefined || val === "") continue;
         if (field === "framework") {
-          (row as Record<string, string>)[field] = mapLaneToFramework(val);
+          (row as unknown as Record<string, string>)[field] = mapLaneToFramework(val);
         } else if (field === "type") {
-          (row as Record<string, string>)[field] = mapRiskToType(val);
+          (row as unknown as Record<string, string>)[field] = mapRiskToType(val);
         } else {
-          (row as Record<string, string>)[field] = val;
+          (row as unknown as Record<string, string>)[field] = val;
         }
       }
 

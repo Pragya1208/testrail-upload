@@ -25,7 +25,7 @@ const MANDATORY_FIELDS = [
   "Title",
   "Framework (ITF→RestAssured, TestCafe→E2E-Testcafe, Manual→None, Dev-Unit→Unit)",
   "Type (Accessibility | Compatibility | Destructive | Functional | Other | Performance | Security | Usability)",
-  "Section ID",
+  "Section ID or Group ID (from TestRail URL, e.g. ...&group_id=568)",
   "Template (Test Case (Text))",
   "Status (Design)",
   "POD (e.g. Journeys, Delivery, SDK, ...)",
@@ -42,7 +42,7 @@ export function validateRowsAndOverrides(
   const rowsMissingType: number[] = [];
 
   if (!overrides?.section_id) {
-    missingMandatory.push("section_id (required)");
+    missingMandatory.push("section_id or group_id (required; e.g. group_id=568 from URL)");
   }
   if (!overrides?.default_references) {
     missingMandatory.push("default_references (JIRA ID) - optional but recommended");
@@ -81,7 +81,7 @@ export function validateRowsAndOverrides(
     message = "Validation passed.";
   } else {
     message =
-      "Please provide the following before uploading:\n\n" +
+      "Do not assume defaults. Please provide the following so we can proceed:\n\n" +
       MANDATORY_FIELDS.map((f) => `- ${f}`).join("\n") +
       "\n\nValidation issues:\n" +
       message;

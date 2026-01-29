@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// Log startup early (stderr) so we see output before any async code
+console.error("[testrail-upload] Starting MCP server...");
+
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -322,4 +325,7 @@ async function main() {
   console.error(`${MCP_SERVER_NAME} v${MCP_SERVER_VERSION} started`);
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  console.error("[testrail-upload] Fatal error:", err);
+  process.exit(1);
+});

@@ -5,8 +5,9 @@ export interface ParsedRow {
   id?: string;
   title?: string;
   framework?: string;
-  priority?: string;
   type?: string;
+  pod?: string;
+  priority?: string;
   preconditions?: string;
   steps?: string;
   expected_results?: string;

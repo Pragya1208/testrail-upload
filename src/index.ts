@@ -19,8 +19,40 @@ import {
   type MandatoryOverrides,
 } from "./validation.js";
 import { TEMPLATE_NAME } from "./mappings.js";
+import type { ParsedRow } from "./csv-parser.js";
 
 dotenv.config();
+
+/** TestRail-format CSV header (standard columns for upload). */
+const TESTRAIL_FORMAT_HEADER =
+  "Title,Framework,Type,POD,References,Preconditions,Steps,Expected Results,Priority,Test Data";
+
+/**
+ * Convert parsed rows to TestRail-format CSV string.
+ * Used by convert_csv_to_testrail_format and by upload (convert-then-upload flow).
+ */
+function buildTestRailFormatCsv(rows: ParsedRow[]): string {
+  const escape = (s: string) =>
+    s.includes(",") || s.includes('"') || s.includes("\n")
+      ? `"${s.replace(/"/g, '""')}"`
+      : s;
+  const cleanRows = rows.map((r) => {
+    const title = r.title?.trim() ?? "";
+    const framework = r.framework?.trim() ?? "";
+    const type = r.type?.trim() ?? "";
+    const pod = r.pod?.trim() ?? "";
+    const refs = r.references?.trim() ?? "";
+    const pre = r.preconditions?.trim() ?? "";
+    const steps = r.steps?.trim() ?? "";
+    const expected = r.expected_results?.trim() ?? "";
+    const priority = r.priority?.trim() ?? "";
+    const testData = r.test_data?.trim() ?? "";
+    return [title, framework, type, pod, refs, pre, steps, expected, priority, testData]
+      .map(escape)
+      .join(",");
+  });
+  return TESTRAIL_FORMAT_HEADER + "\n" + cleanRows.join("\n");
+}
 
 const MCP_SERVER_NAME = "testrail-upload";
 const MCP_SERVER_VERSION = "1.0.0";
@@ -38,9 +70,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "upload_test_cases_to_testrail",
       description:
-        "Upload test cases from a CSV file to TestRail. Reads CSV with columns mapped to TestRail fields. " +
+        "Upload test cases from a CSV file to TestRail. Always converts the CSV to TestRail format first (same as convert_csv_to_testrail_format), then validates and uploads. " +
         "Requires TESTRAIL_URL, TESTRAIL_USERNAME, TESTRAIL_API_KEY in environment. " +
-        "Mandatory: section_id. If CSV misses Title, Framework, Type, POD, or References, provide them via arguments or the tool will return a validation message asking for them.",
+        "Mandatory: section_id (or group_id). If CSV misses Title, Framework, Type, POD, or References, the tool asks you to provide them (e.g. default_pod) and shows available values.",
       inputSchema: {
         type: "object",
         properties: {
@@ -181,35 +213,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ],
         };
       }
-      const cleanHeader =
-        "Title,Framework,Type,POD,References,Preconditions,Steps,Expected Results,Priority,Test Data";
-      const escape = (s: string) =>
-        s.includes(",") || s.includes('"') || s.includes("\n")
-          ? `"${s.replace(/"/g, '""')}"`
-          : s;
+      const cleanCsv = buildTestRailFormatCsv(parseResult.rows);
       const missingPerRow: string[] = [];
-      const cleanRows = parseResult.rows.map((r, i) => {
-        const title = r.title?.trim() ?? "";
-        const framework = r.framework?.trim() ?? "";
-        const type = r.type?.trim() ?? "";
-        const pod = "";
-        const refs = r.references?.trim() ?? "";
-        const pre = r.preconditions?.trim() ?? "";
-        const steps = r.steps?.trim() ?? "";
-        const expected = r.expected_results?.trim() ?? "";
-        const priority = r.priority?.trim() ?? "";
-        const testData = r.test_data?.trim() ?? "";
+      parseResult.rows.forEach((r, i) => {
         const missing: string[] = [];
-        if (!title) missing.push("Title");
-        if (!framework) missing.push("Framework");
-        if (!type) missing.push("Type");
-        if (!refs) missing.push("References");
+        if (!r.title?.trim()) missing.push("Title");
+        if (!r.framework?.trim()) missing.push("Framework");
+        if (!r.type?.trim()) missing.push("Type");
+        if (!r.references?.trim()) missing.push("References");
+        if (!r.pod?.trim()) missing.push("POD");
         if (missing.length) missingPerRow.push(`Row ${i + 1}: ${missing.join(", ")}`);
-        return [title, framework, type, pod, refs, pre, steps, expected, priority, testData]
-          .map(escape)
-          .join(",");
       });
-      const cleanCsv = cleanHeader + "\n" + cleanRows.join("\n");
       const outputPath =
         typeof argsObj.output_path === "string" ? argsObj.output_path : undefined;
       if (outputPath) await fs.writeFile(outputPath, cleanCsv);
@@ -257,6 +271,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
+    // Step 1: Parse user CSV
     const parseResult = parseCSV(csvContent);
     if (parseResult.errors.length > 0) {
       return {
@@ -264,6 +279,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             type: "text" as const,
             text: `CSV parse errors:\n${parseResult.errors.join("\n")}`,
+          },
+        ],
+      };
+    }
+
+    // Step 2: Convert to TestRail format (same as convert_csv_to_testrail_format)
+    const testRailFormatCsv = buildTestRailFormatCsv(parseResult.rows);
+    const parseResult2 = parseCSV(testRailFormatCsv);
+    if (parseResult2.errors.length > 0) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `TestRail-format parse errors:\n${parseResult2.errors.join("\n")}`,
           },
         ],
       };
@@ -308,12 +337,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
-    const validation = validateRowsAndOverrides(parseResult.rows, overrides);
+    const validation = validateRowsAndOverrides(parseResult2.rows, overrides);
 
     if (argsObj.dry_run === true) {
       const summary = [
-        `Parsed ${parseResult.rows.length} rows.`,
-        `Column map: ${JSON.stringify(parseResult.columnMap)}`,
+        `Parsed ${parseResult2.rows.length} rows (after convert to TestRail format).`,
+        `Column map: ${JSON.stringify(parseResult2.columnMap)}`,
         validation.message,
       ].join("\n\n");
       return {
@@ -334,17 +363,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
-    // Apply defaults for missing framework/type per row
+    // Apply defaults for missing framework/type/pod/references per row
     const defaultFramework =
       typeof argsObj.default_framework === "string"
         ? argsObj.default_framework
         : undefined;
     const defaultType =
       typeof argsObj.default_type === "string" ? argsObj.default_type : undefined;
-    const rows = parseResult.rows.map((r) => ({
+    const defaultPod =
+      typeof argsObj.default_pod === "string" ? argsObj.default_pod : undefined;
+    const defaultReferences =
+      typeof argsObj.default_references === "string"
+        ? argsObj.default_references
+        : undefined;
+    const rows = parseResult2.rows.map((r) => ({
       ...r,
       framework: r.framework?.trim() || defaultFramework || r.framework,
       type: r.type?.trim() || defaultType || r.type,
+      pod: r.pod?.trim() || defaultPod || r.pod,
+      references: r.references?.trim() || defaultReferences || r.references,
     }));
     const sectionId = Number(sectionIdArg);
     const projectId =

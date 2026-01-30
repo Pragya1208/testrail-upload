@@ -156,7 +156,7 @@ export class TestRailClient {
     if (framework && FRAMEWORK_VALUES.includes(framework as (typeof FRAMEWORK_VALUES)[number])) {
       (payload as Record<string, unknown>)[options.customFieldFramework ?? "custom_framework"] = framework;
     }
-    const pod = options.defaultPOD?.trim();
+    const pod = (row.pod?.trim() || options.defaultPOD || "").trim();
     if (pod && POD_VALUES.includes(pod as (typeof POD_VALUES)[number])) {
       (payload as Record<string, unknown>)[options.customFieldPOD ?? "custom_pod"] = pod;
     }

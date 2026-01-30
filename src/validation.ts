@@ -32,6 +32,14 @@ const MANDATORY_FIELDS = [
   "References (JIRA ID)",
 ];
 
+/** Check if any row has a non-empty value for a field */
+function anyRowHas(rows: ParsedRow[], field: keyof ParsedRow): boolean {
+  return rows.some((r) => {
+    const v = r[field];
+    return typeof v === "string" && v.trim() !== "";
+  });
+}
+
 export function validateRowsAndOverrides(
   rows: ParsedRow[],
   overrides: Partial<MandatoryOverrides> | null
@@ -44,11 +52,19 @@ export function validateRowsAndOverrides(
   if (!overrides?.section_id) {
     missingMandatory.push("section_id or group_id (required; e.g. group_id=568 from URL)");
   }
-  if (!overrides?.default_references) {
-    missingMandatory.push("default_references (JIRA ID) - optional but recommended");
+
+  const hasPodInCsv = anyRowHas(rows, "pod");
+  if (!hasPodInCsv && !overrides?.default_pod) {
+    missingMandatory.push(
+      `POD is not present in CSV. Please provide default_pod. Available values: ${POD_VALUES.join(" | ")}`
+    );
   }
-  if (!overrides?.default_pod) {
-    missingMandatory.push("default_pod - optional but recommended");
+
+  const hasReferencesInCsv = anyRowHas(rows, "references");
+  if (!hasReferencesInCsv && !overrides?.default_references) {
+    missingMandatory.push(
+      "References (JIRA ID) is not present in CSV. Please provide default_references."
+    );
   }
 
   for (let i = 0; i < rows.length; i++) {
@@ -60,30 +76,30 @@ export function validateRowsAndOverrides(
 
   const valid =
     overrides?.section_id != null &&
+    (hasPodInCsv || overrides?.default_pod != null) &&
+    (hasReferencesInCsv || overrides?.default_references != null) &&
     rowsMissingTitle.length === 0 &&
     (rowsMissingFramework.length === 0 || overrides?.default_framework != null) &&
     (rowsMissingType.length === 0 || overrides?.default_type != null);
 
   let message = "";
   if (missingMandatory.length > 0) {
-    message += `Missing mandatory parameters: ${missingMandatory.join(", ")}.\n`;
+    message += missingMandatory.map((m) => `- ${m}`).join("\n") + "\n\n";
   }
   if (rowsMissingTitle.length > 0) {
     message += `Rows missing Title (row numbers): ${rowsMissingTitle.slice(0, 20).join(", ")}${rowsMissingTitle.length > 20 ? "..." : ""}.\n`;
   }
   if (rowsMissingFramework.length > 0) {
-    message += `Rows missing Framework (row numbers): ${rowsMissingFramework.slice(0, 20).join(", ")}${rowsMissingFramework.length > 20 ? "..." : ""}. Provide default_framework or add Lane column.\n`;
+    message += `Rows missing Framework (row numbers): ${rowsMissingFramework.slice(0, 20).join(", ")}${rowsMissingFramework.length > 20 ? "..." : ""}. Provide default_framework or add Lane column. Available values: ${FRAMEWORK_VALUES.join(" | ")}\n`;
   }
   if (rowsMissingType.length > 0) {
-    message += `Rows missing Type (row numbers): ${rowsMissingType.slice(0, 20).join(", ")}${rowsMissingType.length > 20 ? "..." : ""}. Map Test Type/Risk to Type or provide default_type.\n`;
+    message += `Rows missing Type (row numbers): ${rowsMissingType.slice(0, 20).join(", ")}${rowsMissingType.length > 20 ? "..." : ""}. Provide default_type or add Risk/Test Type column. Available values: ${TYPE_VALUES.join(" | ")}\n`;
   }
   if (!message) {
     message = "Validation passed.";
   } else {
     message =
-      "Do not assume defaults. Please provide the following so we can proceed:\n\n" +
-      MANDATORY_FIELDS.map((f) => `- ${f}`).join("\n") +
-      "\n\nValidation issues:\n" +
+      "Headers not mapped or present in CSV are required. Please provide the following so we can proceed:\n\n" +
       message;
   }
 

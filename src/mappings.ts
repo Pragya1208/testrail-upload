@@ -27,6 +27,7 @@ export const CSV_COLUMN_ALIASES: Record<string, string> = {
   "test data": "test_data",
   "references": "references",
   "refs": "references",
+  "pod": "pod",
   "estimate": "estimate",
 };
 

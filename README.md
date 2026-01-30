@@ -5,9 +5,10 @@ MCP (Model Context Protocol) server for uploading test cases from CSV to TestRai
 ## Features
 
 - **CSV input**: Upload test cases from a CSV file or raw CSV content
+- **Convert-then-upload flow**: `upload_test_cases_to_testrail` always converts the CSV to TestRail format first (same as `convert_csv_to_testrail_format`), then validates and uploads
 - **Environment-based credentials**: TestRail URL, username, and API key via env vars
-- **Column mapping**: Flexible CSV column names mapped to TestRail fields
-- **Mandatory fields**: Validates and prompts for required fields (Title, Framework, Type, Section ID, Template, Status, POD, References)
+- **Column mapping**: Flexible CSV column names mapped to TestRail fields (including POD)
+- **Mandatory fields**: Validates and prompts for required fields; if a header is not mapped or present (e.g. POD), the tool asks you to provide it and shows **available values** (e.g. POD: Orchestration \| Journeys \| …)
 - **Dry run**: Parse and validate CSV without uploading
 
 ## CSV Column Mapping
@@ -25,6 +26,7 @@ MCP (Model Context Protocol) server for uploading test cases from CSV to TestRai
 | Test Data | Steps (additional info) | Merged into step content |
 | Covered? (Yes/No/Manual) | — | Not sent to TestRail by default |
 | References / refs | References | JIRA ID; **recommended** |
+| POD | POD | See POD Values below |
 
 ## Mandatory Fields (TestRail)
 

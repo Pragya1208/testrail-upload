@@ -16,20 +16,20 @@ import { createClientFromEnv, TestRailClient } from "./testrail-client.js";
 import {
   validateRowsAndOverrides,
   formatMandatoryHelp,
+  formatHeaderCheckReport,
   type MandatoryOverrides,
 } from "./validation.js";
-import { TEMPLATE_NAME } from "./mappings.js";
+import { TEMPLATE_NAME, TESTRAIL_MANDATORY_HEADERS } from "./mappings.js";
 import type { ParsedRow } from "./csv-parser.js";
 
 dotenv.config();
 
-/** TestRail-format CSV header (standard columns for upload). */
-const TESTRAIL_FORMAT_HEADER =
-  "Title,Framework,Type,POD,References,Preconditions,Steps,Expected Results,Priority,Test Data";
+/** TestRail-format CSV header (all mandatory headers for upload). */
+const TESTRAIL_FORMAT_HEADER = TESTRAIL_MANDATORY_HEADERS.join(",");
 
 /**
- * Convert parsed rows to TestRail-format CSV string.
- * Used by convert_csv_to_testrail_format and by upload (convert-then-upload flow).
+ * Build TestRail-compatible CSV with all mandatory headers.
+ * Transfers values row by row from parsed rows (mappings already applied in parse step).
  */
 function buildTestRailFormatCsv(rows: ParsedRow[]): string {
   const escape = (s: string) =>
@@ -123,7 +123,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           default_type: {
             type: "string",
             description:
-              "Default Type if not in CSV: Accessibility | Compatibility | Destructive | Functional | Other | Performance | Security | Usability",
+              "Default Type when Risk (CSV) is absent; default is Functional. Values: Accessibility | Compatibility | Destructive | Functional | Other | Performance | Security | Usability",
           },
           default_status: {
             type: "string",
@@ -213,6 +213,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ],
         };
       }
+      const headerCheck = formatHeaderCheckReport(parseResult);
       const cleanCsv = buildTestRailFormatCsv(parseResult.rows);
       const missingPerRow: string[] = [];
       parseResult.rows.forEach((r, i) => {
@@ -237,7 +238,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             type: "text" as const,
             text:
-              "Cleaned CSV with mandatory columns (Title, Framework, Type, POD, References, Preconditions, Steps, Expected Results, Priority, Test Data):\n\n" +
+              "1) Header check (provided CSV → TestRail mapping):\n" +
+              headerCheck +
+              "\n\n2) New CSV created with TestRail-compatible headers; values transferred row by row.\n\n" +
               report +
               "\n\n" +
               (outputPath ? `Cleaned CSV written to: ${outputPath}\n\n` : "") +
@@ -271,7 +274,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
-    // Step 1: Parse user CSV
+    // ─── Step 1: Check provided CSV headers and create TestRail-compatible CSV ───
+    // Parse the provided CSV and check headers against mappings.
     const parseResult = parseCSV(csvContent);
     if (parseResult.errors.length > 0) {
       return {
@@ -284,19 +288,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
-    // Step 2: Convert to TestRail format (same as convert_csv_to_testrail_format)
-    const testRailFormatCsv = buildTestRailFormatCsv(parseResult.rows);
-    const parseResult2 = parseCSV(testRailFormatCsv);
-    if (parseResult2.errors.length > 0) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `TestRail-format parse errors:\n${parseResult2.errors.join("\n")}`,
-          },
-        ],
-      };
-    }
+    const headerCheckReport = formatHeaderCheckReport(parseResult);
 
     const sectionIdArg =
       typeof argsObj.section_id === "number"
@@ -337,12 +329,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
-    const validation = validateRowsAndOverrides(parseResult2.rows, overrides);
+    // Validate: section_id and defaults for missing mandatory headers (POD, References, etc.).
+    const validation = validateRowsAndOverrides(parseResult.rows, overrides);
 
     if (argsObj.dry_run === true) {
       const summary = [
-        `Parsed ${parseResult2.rows.length} rows (after convert to TestRail format).`,
-        `Column map: ${JSON.stringify(parseResult2.columnMap)}`,
+        headerCheckReport,
+        "",
+        `Parsed ${parseResult.rows.length} rows.`,
+        `Column map: ${JSON.stringify(parseResult.columnMap)}`,
         validation.message,
       ].join("\n\n");
       return {
@@ -356,33 +351,55 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             type: "text" as const,
             text:
-              "Validation failed. Do not assume defaults. Please provide the following so we can proceed:\n\n" +
+              "Step 1 – Header check and validation failed.\n\n" +
+              headerCheckReport +
+              "\n\n" +
               validation.message,
           },
         ],
       };
     }
 
-    // Apply defaults for missing framework/type/pod/references per row
+    // ─── Step 2: Create new CSV with TestRail-compatible headers and transfer values row by row ───
+    // Apply defaults so mandatory columns (POD, References, Framework, Type) are filled.
+    // Type (TestRail) is mapped from Risk (CSV); if Risk is absent, default is Functional.
     const defaultFramework =
       typeof argsObj.default_framework === "string"
         ? argsObj.default_framework
         : undefined;
     const defaultType =
-      typeof argsObj.default_type === "string" ? argsObj.default_type : undefined;
+      typeof argsObj.default_type === "string" ? argsObj.default_type : "Functional";
     const defaultPod =
       typeof argsObj.default_pod === "string" ? argsObj.default_pod : undefined;
     const defaultReferences =
       typeof argsObj.default_references === "string"
         ? argsObj.default_references
         : undefined;
-    const rows = parseResult2.rows.map((r) => ({
+    const rowsWithDefaults = parseResult.rows.map((r) => ({
       ...r,
       framework: r.framework?.trim() || defaultFramework || r.framework,
       type: r.type?.trim() || defaultType || r.type,
       pod: r.pod?.trim() || defaultPod || r.pod,
       references: r.references?.trim() || defaultReferences || r.references,
     }));
+
+    // Build new CSV with all mandatory TestRail headers; values transferred row by row per mapping.
+    const testRailFormatCsv = buildTestRailFormatCsv(rowsWithDefaults);
+    const parseResult2 = parseCSV(testRailFormatCsv);
+    if (parseResult2.errors.length > 0) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Step 2 – TestRail-format CSV parse errors:\n${parseResult2.errors.join("\n")}`,
+          },
+        ],
+      };
+    }
+
+    const rows = parseResult2.rows;
+
+    // ─── Step 3: Upload the created TestRail-compatible CSV to TestRail ───
     const sectionId = Number(sectionIdArg);
     const projectId =
       typeof argsObj.project_id === "number" ? argsObj.project_id : undefined;
@@ -429,7 +446,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ? argsObj.default_references
           : undefined,
       defaultFramework,
-      defaultType,
+      defaultType: defaultType ?? "Functional",
     };
 
     const result = await client.uploadCases(

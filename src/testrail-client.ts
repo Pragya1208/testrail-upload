@@ -21,6 +21,8 @@ export interface UploadOptions {
   customFieldStatus?: string;
   /** Map POD label -> dropdown ID (required when POD field is dropdown; resolved from get_case_fields if not set) */
   podLabelToId?: Record<string, number>;
+  /** Map Framework label -> dropdown ID (required when Framework field is dropdown; resolved from get_case_fields if not set) */
+  frameworkLabelToId?: Record<string, number>;
 }
 
 export interface ResolvedCase {
@@ -110,15 +112,53 @@ export class TestRailClient {
    * Finds a field whose label/name contains "framework" or "automation" (e.g. custom_case_automation_framework).
    */
   async resolveFrameworkFieldName(): Promise<string> {
-    const fields = (await this.getCaseFields()) as Array<{ name?: string; label?: string; system_name?: string }>;
+    const { fieldName } = await this.resolveFrameworkFieldNameAndOptions();
+    return fieldName;
+  }
+
+  /**
+   * Resolve Framework field name and dropdown options (label -> id) from get_case_fields.
+   * Dropdown fields require numeric IDs; parses configs[].options.items (e.g. "1, E2E-Testcafe\n2, RestAssured").
+   */
+  async resolveFrameworkFieldNameAndOptions(): Promise<{
+    fieldName: string;
+    labelToId: Record<string, number>;
+  }> {
+    const fields = (await this.getCaseFields()) as Array<{
+      name?: string;
+      label?: string;
+      system_name?: string;
+      type_id?: number;
+      configs?: Array<{ options?: { items?: string } }> | string;
+    }>;
     const f = fields.find((field) => {
       const n = (field.name ?? field.label ?? "").toLowerCase();
       return n.includes("framework") || n.includes("automation");
     });
-    if (f?.system_name) {
-      return "custom_" + f.system_name.replace(/^custom_/, "");
+    const fieldName = f?.system_name
+      ? "custom_" + f.system_name.replace(/^custom_/, "")
+      : "custom_framework";
+    const labelToId: Record<string, number> = {};
+    let configs = f?.configs;
+    if (typeof configs === "string") {
+      try {
+        configs = JSON.parse(configs) as Array<{ options?: { items?: string } }>;
+      } catch {
+        configs = undefined;
+      }
     }
-    return "custom_framework";
+    if (f?.type_id === 6 && Array.isArray(configs) && configs.length > 0) {
+      const itemsStr = configs[0]?.options?.items ?? "";
+      for (const line of itemsStr.split(/\n/)) {
+        const match = line.match(/^\s*(\d+)\s*,\s*(.+)$/);
+        if (match) {
+          const id = parseInt(match[1], 10);
+          const label = match[2].trim();
+          labelToId[label] = id;
+        }
+      }
+    }
+    return { fieldName, labelToId };
   }
 
   /**
@@ -228,14 +268,27 @@ export class TestRailClient {
 
     // Custom fields: Framework, POD, Status (names vary by instance)
     const framework = (row.framework?.trim() || options.defaultFramework || "").trim();
-    const frameworkValue =
+    const frameworkLabel =
       framework && FRAMEWORK_VALUES.includes(framework as (typeof FRAMEWORK_VALUES)[number])
         ? framework
         : options.defaultFramework?.trim() && FRAMEWORK_VALUES.includes(options.defaultFramework.trim() as (typeof FRAMEWORK_VALUES)[number])
           ? options.defaultFramework.trim()
           : null;
-    if (frameworkValue) {
-      (payload as Record<string, unknown>)[options.customFieldFramework ?? "custom_framework"] = frameworkValue;
+    if (frameworkLabel) {
+      const frameworkFieldKey = options.customFieldFramework ?? "custom_framework";
+      let frameworkValue: number | string = frameworkLabel;
+      if (options.frameworkLabelToId && Object.keys(options.frameworkLabelToId).length > 0) {
+        const idByExact = options.frameworkLabelToId[frameworkLabel];
+        const idByLower =
+          idByExact ??
+          Object.entries(options.frameworkLabelToId).find(
+            ([k]) => k.toLowerCase() === frameworkLabel.toLowerCase()
+          )?.[1];
+        if (idByExact !== undefined || idByLower !== undefined) {
+          frameworkValue = idByExact ?? idByLower!;
+        }
+      }
+      (payload as Record<string, unknown>)[frameworkFieldKey] = frameworkValue;
     }
     const pod = (row.pod?.trim() || options.defaultPOD || "").trim();
     if (pod && POD_VALUES.includes(pod as (typeof POD_VALUES)[number])) {
@@ -292,8 +345,12 @@ export class TestRailClient {
         optionsWithPOD.podLabelToId = resolved.labelToId;
       }
     }
-    if (!optionsWithPOD.customFieldFramework) {
-      optionsWithPOD.customFieldFramework = await this.resolveFrameworkFieldName();
+    if (!optionsWithPOD.customFieldFramework || !optionsWithPOD.frameworkLabelToId) {
+      const resolved = await this.resolveFrameworkFieldNameAndOptions();
+      optionsWithPOD.customFieldFramework = resolved.fieldName;
+      if (Object.keys(resolved.labelToId).length > 0) {
+        optionsWithPOD.frameworkLabelToId = resolved.labelToId;
+      }
     }
     const result: UploadResult = {
       total: rows.length,

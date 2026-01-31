@@ -48,7 +48,9 @@ const PRIORITY_MAP: Record<string, number> = {
 };
 
 function priorityToId(p: string): number {
-  return PRIORITY_MAP[p.trim().toLowerCase()] ?? 2;
+  const raw = p.trim().toLowerCase();
+  const key = raw.replace(/^p\d+-/, "").trim() || raw;
+  return PRIORITY_MAP[key] ?? 2;
 }
 
 /** TestRail case types: name -> id (defaults; real IDs come from get_case_types) */
@@ -99,6 +101,25 @@ export class TestRailClient {
   async getCaseFields(): Promise<unknown[]> {
     const { data } = await this.client.get("/index.php?/api/v2/get_case_fields");
     return data;
+  }
+
+  /**
+   * Resolve the TestRail custom field name for POD from get_case_fields.
+   * Finds a field whose label/name is "POD" and returns the API key (e.g. custom_case_podname).
+   * Falls back to "custom_pod" if not found.
+   */
+  async resolvePodFieldName(): Promise<string> {
+    const fields = await this.getCaseFields();
+    const podField = (fields as Array<{ name?: string; label?: string; system_name?: string }>).find(
+      (f) => {
+        const name = (f.name ?? f.label ?? "").toLowerCase();
+        return name === "pod" || name.includes("pod");
+      }
+    );
+    if (podField?.system_name) {
+      return "custom_" + podField.system_name.replace(/^custom_/, "");
+    }
+    return "custom_pod";
   }
 
   /**
@@ -190,6 +211,10 @@ export class TestRailClient {
     templateId: number,
     batchDelayMs: number = 200
   ): Promise<UploadResult> {
+    const optionsWithPOD = { ...options };
+    if (!optionsWithPOD.customFieldPOD) {
+      optionsWithPOD.customFieldPOD = await this.resolvePodFieldName();
+    }
     const result: UploadResult = {
       total: rows.length,
       uploaded: 0,
@@ -201,7 +226,7 @@ export class TestRailClient {
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       try {
-        const payload = this.buildCasePayload(row, options, templateId);
+        const payload = this.buildCasePayload(row, optionsWithPOD, templateId);
         const created = await this.addCase(options.sectionId, payload);
         result.uploaded++;
         result.createdIds.push({

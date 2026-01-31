@@ -9,7 +9,7 @@ import { buildStepsFromRow } from "./csv-parser.js";
 
 export interface UploadOptions {
   sectionId: number;
-  templateId?: number;
+  templateId?: number;   
   defaultStatus?: string;
   defaultPOD?: string;
   defaultReferences?: string;
@@ -103,6 +103,22 @@ export class TestRailClient {
   async getCaseFields(): Promise<unknown[]> {
     const { data } = await this.client.get("/index.php?/api/v2/get_case_fields");
     return data;
+  }
+
+  /**
+   * Resolve the TestRail custom field name for Framework/Automation from get_case_fields.
+   * Finds a field whose label/name contains "framework" or "automation" (e.g. custom_case_automation_framework).
+   */
+  async resolveFrameworkFieldName(): Promise<string> {
+    const fields = (await this.getCaseFields()) as Array<{ name?: string; label?: string; system_name?: string }>;
+    const f = fields.find((field) => {
+      const n = (field.name ?? field.label ?? "").toLowerCase();
+      return n.includes("framework") || n.includes("automation");
+    });
+    if (f?.system_name) {
+      return "custom_" + f.system_name.replace(/^custom_/, "");
+    }
+    return "custom_framework";
   }
 
   /**
@@ -212,8 +228,14 @@ export class TestRailClient {
 
     // Custom fields: Framework, POD, Status (names vary by instance)
     const framework = (row.framework?.trim() || options.defaultFramework || "").trim();
-    if (framework && FRAMEWORK_VALUES.includes(framework as (typeof FRAMEWORK_VALUES)[number])) {
-      (payload as Record<string, unknown>)[options.customFieldFramework ?? "custom_framework"] = framework;
+    const frameworkValue =
+      framework && FRAMEWORK_VALUES.includes(framework as (typeof FRAMEWORK_VALUES)[number])
+        ? framework
+        : options.defaultFramework?.trim() && FRAMEWORK_VALUES.includes(options.defaultFramework.trim() as (typeof FRAMEWORK_VALUES)[number])
+          ? options.defaultFramework.trim()
+          : null;
+    if (frameworkValue) {
+      (payload as Record<string, unknown>)[options.customFieldFramework ?? "custom_framework"] = frameworkValue;
     }
     const pod = (row.pod?.trim() || options.defaultPOD || "").trim();
     if (pod && POD_VALUES.includes(pod as (typeof POD_VALUES)[number])) {
@@ -269,6 +291,9 @@ export class TestRailClient {
       if (Object.keys(resolved.labelToId).length > 0) {
         optionsWithPOD.podLabelToId = resolved.labelToId;
       }
+    }
+    if (!optionsWithPOD.customFieldFramework) {
+      optionsWithPOD.customFieldFramework = await this.resolveFrameworkFieldName();
     }
     const result: UploadResult = {
       total: rows.length,

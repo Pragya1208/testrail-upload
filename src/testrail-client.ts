@@ -19,6 +19,8 @@ export interface UploadOptions {
   customFieldFramework?: string;
   customFieldPOD?: string;
   customFieldStatus?: string;
+  /** Map POD label -> dropdown ID (required when POD field is dropdown; resolved from get_case_fields if not set) */
+  podLabelToId?: Record<string, number>;
 }
 
 export interface ResolvedCase {
@@ -109,17 +111,53 @@ export class TestRailClient {
    * Falls back to "custom_pod" if not found.
    */
   async resolvePodFieldName(): Promise<string> {
-    const fields = await this.getCaseFields();
-    const podField = (fields as Array<{ name?: string; label?: string; system_name?: string }>).find(
-      (f) => {
-        const name = (f.name ?? f.label ?? "").toLowerCase();
-        return name === "pod" || name.includes("pod");
+    const { fieldName } = await this.resolvePodFieldNameAndOptions();
+    return fieldName;
+  }
+
+  /**
+   * Resolve POD field name and dropdown options (label -> id) from get_case_fields.
+   * Dropdown fields require numeric IDs; this parses configs[].options.items (e.g. "1, Orchestration\n2, Journeys").
+   */
+  async resolvePodFieldNameAndOptions(): Promise<{
+    fieldName: string;
+    labelToId: Record<string, number>;
+  }> {
+    const fields = (await this.getCaseFields()) as Array<{
+      name?: string;
+      label?: string;
+      system_name?: string;
+      type_id?: number;
+      configs?: Array<{ options?: { items?: string } }> | string;
+    }>;
+    const podField = fields.find((f) => {
+      const name = (f.name ?? f.label ?? "").toLowerCase();
+      return name === "pod" || name.includes("pod");
+    });
+    const fieldName = podField?.system_name
+      ? "custom_" + podField.system_name.replace(/^custom_/, "")
+      : "custom_pod";
+    const labelToId: Record<string, number> = {};
+    let configs = podField?.configs;
+    if (typeof configs === "string") {
+      try {
+        configs = JSON.parse(configs) as Array<{ options?: { items?: string } }>;
+      } catch {
+        configs = undefined;
       }
-    );
-    if (podField?.system_name) {
-      return "custom_" + podField.system_name.replace(/^custom_/, "");
     }
-    return "custom_pod";
+    if (podField?.type_id === 6 && Array.isArray(configs) && configs.length > 0) {
+      const itemsStr = configs[0]?.options?.items ?? "";
+      for (const line of itemsStr.split(/\n/)) {
+        const match = line.match(/^\s*(\d+)\s*,\s*(.+)$/);
+        if (match) {
+          const id = parseInt(match[1], 10);
+          const label = match[2].trim();
+          labelToId[label] = id;
+        }
+      }
+    }
+    return { fieldName, labelToId };
   }
 
   /**
@@ -179,7 +217,20 @@ export class TestRailClient {
     }
     const pod = (row.pod?.trim() || options.defaultPOD || "").trim();
     if (pod && POD_VALUES.includes(pod as (typeof POD_VALUES)[number])) {
-      (payload as Record<string, unknown>)[options.customFieldPOD ?? "custom_pod"] = pod;
+      const podFieldKey = options.customFieldPOD ?? "custom_pod";
+      let podValue: number | string = pod;
+      if (options.podLabelToId && Object.keys(options.podLabelToId).length > 0) {
+        const idByExact = options.podLabelToId[pod];
+        const idByLower =
+          idByExact ??
+          Object.entries(options.podLabelToId).find(
+            ([k]) => k.toLowerCase() === pod.toLowerCase()
+          )?.[1];
+        if (idByExact !== undefined || idByLower !== undefined) {
+          podValue = idByExact ?? idByLower!;
+        }
+      }
+      (payload as Record<string, unknown>)[podFieldKey] = podValue;
     }
     const status = options.defaultStatus ?? DEFAULT_STATUS;
     (payload as Record<string, unknown>)[options.customFieldStatus ?? "custom_status"] = status;
@@ -212,8 +263,12 @@ export class TestRailClient {
     batchDelayMs: number = 200
   ): Promise<UploadResult> {
     const optionsWithPOD = { ...options };
-    if (!optionsWithPOD.customFieldPOD) {
-      optionsWithPOD.customFieldPOD = await this.resolvePodFieldName();
+    if (!optionsWithPOD.customFieldPOD || !optionsWithPOD.podLabelToId) {
+      const resolved = await this.resolvePodFieldNameAndOptions();
+      optionsWithPOD.customFieldPOD = resolved.fieldName;
+      if (Object.keys(resolved.labelToId).length > 0) {
+        optionsWithPOD.podLabelToId = resolved.labelToId;
+      }
     }
     const result: UploadResult = {
       total: rows.length,

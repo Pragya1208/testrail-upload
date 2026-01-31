@@ -1,5 +1,12 @@
 import type { ParsedRow } from "./csv-parser.js";
-import { FRAMEWORK_VALUES, POD_VALUES, TYPE_VALUES } from "./mappings.js";
+import type { ParseResult } from "./csv-parser.js";
+import {
+  FRAMEWORK_VALUES,
+  POD_VALUES,
+  TYPE_VALUES,
+  FIELD_TO_TESTRAIL_HEADER,
+  TESTRAIL_MANDATORY_HEADERS,
+} from "./mappings.js";
 
 export interface MandatoryOverrides {
   section_id: number;
@@ -40,6 +47,37 @@ function anyRowHas(rows: ParsedRow[], field: keyof ParsedRow): boolean {
   });
 }
 
+/**
+ * Build a header-check report: detected CSV headers, mapping to TestRail fields, and missing mandatory headers.
+ */
+export function formatHeaderCheckReport(parseResult: ParseResult): string {
+  const { detectedHeaders, columnMap } = parseResult;
+  const lines: string[] = [];
+
+  lines.push("1) Provided CSV headers checked:");
+  lines.push(`   Detected CSV headers: ${detectedHeaders.length ? detectedHeaders.join(", ") : "(none)"}`);
+
+  const mappingLines: string[] = [];
+  for (const [field, csvHeader] of Object.entries(columnMap)) {
+    const testrailHeader = FIELD_TO_TESTRAIL_HEADER[field] ?? field;
+    mappingLines.push(`   ${csvHeader} → ${testrailHeader}`);
+  }
+  if (mappingLines.length) {
+    lines.push("   Mapped to TestRail fields:");
+    lines.push(...mappingLines);
+  }
+
+  const mappedToHeaders = new Set(Object.keys(columnMap).map((f) => FIELD_TO_TESTRAIL_HEADER[f] ?? f));
+  const missingFromCsv = TESTRAIL_MANDATORY_HEADERS.filter((h) => !mappedToHeaders.has(h));
+  if (missingFromCsv.length) {
+    lines.push(`   Mandatory TestRail headers missing from CSV (provide default_* or add column): ${missingFromCsv.join(", ")}`);
+  } else {
+    lines.push("   All mandatory TestRail headers present or mapped.");
+  }
+
+  return lines.join("\n");
+}
+
 export function validateRowsAndOverrides(
   rows: ParsedRow[],
   overrides: Partial<MandatoryOverrides> | null
@@ -74,13 +112,13 @@ export function validateRowsAndOverrides(
     if (!row.type?.trim()) rowsMissingType.push(i + 1);
   }
 
+  // Type (TestRail) is mapped from Risk (CSV); if Risk is absent, default is Functional (no default_type required)
   const valid =
     overrides?.section_id != null &&
     (hasPodInCsv || overrides?.default_pod != null) &&
     (hasReferencesInCsv || overrides?.default_references != null) &&
     rowsMissingTitle.length === 0 &&
-    (rowsMissingFramework.length === 0 || overrides?.default_framework != null) &&
-    (rowsMissingType.length === 0 || overrides?.default_type != null);
+    (rowsMissingFramework.length === 0 || overrides?.default_framework != null);
 
   let message = "";
   if (missingMandatory.length > 0) {
@@ -93,7 +131,7 @@ export function validateRowsAndOverrides(
     message += `Rows missing Framework (row numbers): ${rowsMissingFramework.slice(0, 20).join(", ")}${rowsMissingFramework.length > 20 ? "..." : ""}. Provide default_framework or add Lane column. Available values: ${FRAMEWORK_VALUES.join(" | ")}\n`;
   }
   if (rowsMissingType.length > 0) {
-    message += `Rows missing Type (row numbers): ${rowsMissingType.slice(0, 20).join(", ")}${rowsMissingType.length > 20 ? "..." : ""}. Provide default_type or add Risk/Test Type column. Available values: ${TYPE_VALUES.join(" | ")}\n`;
+    message += `Rows missing Type (mapped from Risk) (row numbers): ${rowsMissingType.slice(0, 20).join(", ")}${rowsMissingType.length > 20 ? "..." : ""}. Default is Functional; or provide default_type or add Risk column. Available values: ${TYPE_VALUES.join(" | ")}\n`;
   }
   if (!message) {
     message = "Validation passed.";

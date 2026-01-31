@@ -5,7 +5,7 @@ MCP (Model Context Protocol) server for uploading test cases from CSV to TestRai
 ## Features
 
 - **CSV input**: Upload test cases from a CSV file or raw CSV content
-- **Convert-then-upload flow**: `upload_test_cases_to_testrail` always converts the CSV to TestRail format first (same as `convert_csv_to_testrail_format`), then validates and uploads
+- **Three-step upload flow**: (1) Provided CSV is checked for headers and mapped to TestRail fields; a new CSV is created with all mandatory TestRail headers. (2) All mappings are applied and values are transferred row by row into the new CSV. (3) The created TestRail-compatible CSV is uploaded to TestRail.
 - **Environment-based credentials**: TestRail URL, username, and API key via env vars
 - **Column mapping**: Flexible CSV column names mapped to TestRail fields (including POD)
 - **Mandatory fields**: Validates and prompts for required fields; if a header is not mapped or present (e.g. POD), the tool asks you to provide it and shows **available values** (e.g. POD: Orchestration \| Journeys \| …)
@@ -13,20 +13,23 @@ MCP (Model Context Protocol) server for uploading test cases from CSV to TestRai
 
 ## CSV Column Mapping
 
+Headers are matched after normalizing: trim, lowercase, collapse spaces (e.g. `Preconditions / Config` and `Preconditions/Config` both map to Preconditions).
+
 | CSV Column (any of) | Maps To | Notes |
 |--------------------|---------|--------|
-| TestCase_ID / Test Case ID | ID | Reference only |
+| TestCase_ID / Test Case ID / SCN_ID / Scenario ID | ID | Reference only |
 | Scenario title / Test Case Title / Title | Title | **Mandatory** |
 | Lane | Framework | ITF→RestAssured, TestCafe→E2E-Testcafe, Manual→None, Dev-Unit (Dev-owned)→Unit |
-| Priority | Priority | Critical, High, Medium, Low |
-| Test Type / Risk | Type | correctness/data/reliability/regression→Functional, security→Security, perf→Performance, UX→Usability, etc. |
-| Preconditions / config | Preconditions | |
-| Trigger / action / Test Steps | Steps (content) | |
-| Expected Results | Steps (expected) | |
-| Test Data | Steps (additional info) | Merged into step content |
-| Covered? (Yes/No/Manual) | — | Not sent to TestRail by default |
-| References / refs | References | JIRA ID; **recommended** |
+| Priority | Priority | P1-Critical→4, P2-High→3, P3-Medium→2, P4-Low→1; or Critical/High/Medium/Low |
+| Test Type / Risk | Type | TestRail **Type** is mapped from CSV **Risk** (or Test Type). If Risk is absent, default is **Functional**. Values: correctness/data/reliability/regression→Functional, security→Security, perf→Performance, UX→Usability, high/medium/low→Functional, etc. |
+| Preconditions / Preconditions/Config / Preconditions / Config / config | Preconditions | |
+| Trigger / Trigger/Action / Trigger / Action / Test Steps / Steps / Action | Steps (content) | |
+| Expected Results / Expected Result / Oracle/Observable / Oracle / Observable | Expected Results | |
+| Test Data | Test Data | Merged into step content for API |
+| Covered? / Covered | — | Not sent to TestRail by default |
+| References / refs / REQ_ID / reference | References | JIRA ID; **recommended** |
 | POD | POD | See POD Values below |
+| Estimate | Estimate | Optional |
 
 ## Mandatory Fields (TestRail)
 
@@ -34,7 +37,7 @@ Provide via tool arguments or ensure CSV has them:
 
 - **Title** – every row must have a title
 - **Framework** – None \| E2E-Testcafe \| RestAssured \| Mobile \| Unit (or Lane column with ITF/TestCafe/Manual/Dev-Unit)
-- **Type** – Accessibility \| Compatibility \| Destructive \| Functional \| Other \| Performance \| Security \| Usability
+- **Type** – Mapped from CSV **Risk** (or Test Type). If Risk is absent, default is **Functional**. Values: Accessibility \| Compatibility \| Destructive \| Functional \| Other \| Performance \| Security \| Usability
 - **Section ID** – TestRail section where cases will be added (required)
 - **Template** – "Test Case (Text)" (template_id resolved from project if `project_id` provided)
 - **Status** – Design (default)
@@ -131,7 +134,13 @@ Then point your MCP config at `.../testrail-upload/dist/index.js` (see [INTEGRAT
 - **default_pod**, **default_references**, **default_framework**, **default_type** – only used when you explicitly pass them; no defaults are assumed for missing CSV fields. If mandatory fields are missing, the tool prompts you to provide them.
 - **dry_run** – `true` to only parse/validate, no upload
 
-**convert_csv_to_testrail_format** – Converts your CSV to a clean TestRail-ready CSV with mandatory columns (Title, Framework, Type, POD, References, Preconditions, Steps, Expected Results, Priority, Test Data). Does not assume defaults; returns a missing-fields report so you can fill or provide values when uploading.
+**Upload flow (upload_test_cases_to_testrail)**:
+
+1. **Step 1 – Check headers**: The provided CSV is parsed and headers are checked against the mapping. Detected headers are reported and mapped to TestRail fields; mandatory TestRail headers missing from the CSV are listed (you must provide `default_*` or add a column). Validation fails with available values if required fields are missing.
+2. **Step 2 – Create TestRail CSV**: A new CSV is created with all mandatory TestRail headers (Title, Framework, Type, POD, References, Preconditions, Steps, Expected Results, Priority, Test Data). Values are transferred row by row from the provided CSV according to the mapping.
+3. **Step 3 – Upload**: The created TestRail-compatible CSV is uploaded to TestRail.
+
+**convert_csv_to_testrail_format** – Converts your CSV to a clean TestRail-ready CSV with mandatory columns (Title, Framework, Type, POD, References, Preconditions, Steps, Expected Results, Priority, Test Data). Reports header check and mapping; does not assume defaults; returns a missing-fields report so you can fill or provide values when uploading.
 
 ## Troubleshooting: npx exits immediately with no output
 

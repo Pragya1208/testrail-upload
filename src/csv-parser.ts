@@ -22,6 +22,8 @@ export interface ParsedRow {
 export interface ParseResult {
   rows: ParsedRow[];
   columnMap: Record<string, string>;
+  /** Original CSV header names (from first row). */
+  detectedHeaders: string[];
   errors: string[];
 }
 
@@ -70,6 +72,7 @@ export function parseCSV(content: string): ParseResult {
   const errors: string[] = [];
   let rows: ParsedRow[] = [];
   let columnMap: Record<string, string> = {};
+  let detectedHeaders: string[] = [];
 
   try {
     const records = parse(content, {
@@ -81,10 +84,11 @@ export function parseCSV(content: string): ParseResult {
     }) as Record<string, string>[];
 
     if (records.length === 0) {
-      return { rows: [], columnMap: {}, errors: ["CSV has no data rows."] };
+      return { rows: [], columnMap: {}, detectedHeaders: [], errors: ["CSV has no data rows."] };
     }
 
     const headers = Object.keys(records[0]);
+    detectedHeaders = headers.filter((h) => h != null && String(h).trim() !== "");
     columnMap = detectColumnMap(headers);
 
     for (let i = 0; i < records.length; i++) {
@@ -109,7 +113,7 @@ export function parseCSV(content: string): ParseResult {
     errors.push(e instanceof Error ? e.message : String(e));
   }
 
-  return { rows, columnMap, errors };
+  return { rows, columnMap, detectedHeaders, errors };
 }
 
 /**

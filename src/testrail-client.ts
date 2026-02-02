@@ -23,6 +23,8 @@ export interface UploadOptions {
   podLabelToId?: Record<string, number>;
   /** Map Framework label -> dropdown ID (required when Framework field is dropdown; resolved from get_case_fields if not set) */
   frameworkLabelToId?: Record<string, number>;
+  /** Map Test Type name -> type_id (resolved from get_case_types; avoids wrong type when instance IDs differ) */
+  typeNameToId?: Record<string, number>;
 }
 
 export interface ResolvedCase {
@@ -71,7 +73,11 @@ const TYPE_NAME_TO_ID: Record<string, number> = {
 
 function typeToId(t: string): number {
   const key = t.trim().toLowerCase().replace(/\s+/g, "_");
-  return TYPE_NAME_TO_ID[key] ?? 4; // default Functional
+  return TYPE_NAME_TO_ID[key] ?? 4; // default Functional (fallback when API not used)
+}
+
+function normalizeTypeKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, "_");
 }
 
 export class TestRailClient {
@@ -250,9 +256,6 @@ export class TestRailClient {
     if (row.priority) {
       payload.priority_id = priorityToId(row.priority);
     }
-    if (row.type) {
-      payload.type_id = typeToId(row.type);
-    }
     if (row.estimate) {
       payload.estimate = row.estimate.trim();
     }
@@ -311,7 +314,16 @@ export class TestRailClient {
     (payload as Record<string, unknown>)[options.customFieldStatus ?? "custom_status"] = status;
 
     if (row.type || options.defaultType) {
-      payload.type_id = typeToId(row.type?.trim() || options.defaultType || "Functional");
+      const typeName = (row.type?.trim() || options.defaultType || "Functional").trim();
+      const typeKey = normalizeTypeKey(typeName);
+      const typeId =
+        options.typeNameToId && Object.keys(options.typeNameToId).length > 0
+          ? options.typeNameToId[typeKey] ??
+            Object.entries(options.typeNameToId).find(
+              ([k]) => k.toLowerCase() === typeKey
+            )?.[1]
+          : undefined;
+      payload.type_id = typeId ?? typeToId(typeName);
     }
 
     return payload;
@@ -351,6 +363,15 @@ export class TestRailClient {
       if (Object.keys(resolved.labelToId).length > 0) {
         optionsWithPOD.frameworkLabelToId = resolved.labelToId;
       }
+    }
+    if (!optionsWithPOD.typeNameToId || Object.keys(optionsWithPOD.typeNameToId).length === 0) {
+      const caseTypes = await this.getCaseTypes();
+      const typeNameToId: Record<string, number> = {};
+      for (const { id, name } of caseTypes) {
+        const key = normalizeTypeKey(name);
+        typeNameToId[key] = id;
+      }
+      optionsWithPOD.typeNameToId = typeNameToId;
     }
     const result: UploadResult = {
       total: rows.length,

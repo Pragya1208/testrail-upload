@@ -25,6 +25,8 @@ export interface UploadOptions {
   frameworkLabelToId?: Record<string, number>;
   /** Map Test Type name -> type_id (resolved from get_case_types; avoids wrong type when instance IDs differ) */
   typeNameToId?: Record<string, number>;
+  /** Map Priority name / p1,p2,p3,p4 -> priority_id (resolved from get_priorities; avoids wrong priority when instance IDs differ) */
+  priorityNameToId?: Record<string, number>;
 }
 
 export interface ResolvedCase {
@@ -57,6 +59,17 @@ function priorityToId(p: string): number {
   const raw = p.trim().toLowerCase();
   const key = raw.replace(/^p\d+-/, "").trim() || raw;
   return PRIORITY_MAP[key] ?? 2;
+}
+
+function normalizePriorityKey(p: string): string {
+  const raw = p.trim().toLowerCase();
+  return raw.replace(/^p\d+-/, "").trim() || raw;
+}
+
+/** Extract P1/P2/P3/P4 from CSV value like "P1-Critical" or "P2-High". */
+function extractPNumber(p: string): string | null {
+  const m = p.trim().toLowerCase().match(/^p(\d+)/);
+  return m ? "p" + m[1] : null;
 }
 
 /** TestRail case types: name -> id (defaults; real IDs come from get_case_types) */
@@ -98,6 +111,11 @@ export class TestRailClient {
 
   async getCaseTypes(): Promise<Array<{ id: number; name: string }>> {
     const { data } = await this.client.get("/index.php?/api/v2/get_case_types");
+    return data;
+  }
+
+  async getPriorities(): Promise<Array<{ id: number; name: string; short_name?: string; priority: number }>> {
+    const { data } = await this.client.get("/index.php?/api/v2/get_priorities");
     return data;
   }
 
@@ -254,7 +272,19 @@ export class TestRailClient {
     };
 
     if (row.priority) {
-      payload.priority_id = priorityToId(row.priority);
+      const priorityLabel = row.priority.trim();
+      const semanticKey = normalizePriorityKey(priorityLabel);
+      const pNum = extractPNumber(priorityLabel);
+      let priorityId: number | undefined;
+      if (options.priorityNameToId && Object.keys(options.priorityNameToId).length > 0) {
+        priorityId =
+          (pNum ? options.priorityNameToId[pNum] : undefined) ??
+          options.priorityNameToId[semanticKey] ??
+          Object.entries(options.priorityNameToId).find(
+            ([k]) => k.toLowerCase() === semanticKey
+          )?.[1];
+      }
+      payload.priority_id = (priorityId !== undefined ? priorityId : priorityToId(priorityLabel)) as number;
     }
     if (row.estimate) {
       payload.estimate = row.estimate.trim();
@@ -372,6 +402,25 @@ export class TestRailClient {
         typeNameToId[key] = id;
       }
       optionsWithPOD.typeNameToId = typeNameToId;
+    }
+    if (!optionsWithPOD.priorityNameToId || Object.keys(optionsWithPOD.priorityNameToId).length === 0) {
+      const priorities = await this.getPriorities();
+      const priorityNameToId: Record<string, number> = {};
+      const byOrder = [...priorities].sort((a, b) => b.priority - a.priority);
+      byOrder.forEach((p, i) => {
+        priorityNameToId["p" + (i + 1)] = p.id;
+      });
+      for (const p of priorities) {
+        const nameKey = (p.name ?? "").trim().toLowerCase().replace(/\s+/g, "_");
+        if (nameKey) priorityNameToId[nameKey] = p.id;
+        const shortKey = (p.short_name ?? "").trim().toLowerCase().replace(/\s+/g, "_");
+        if (shortKey) priorityNameToId[shortKey] = p.id;
+      }
+      const orderSemantic = ["critical", "high", "medium", "low"];
+      byOrder.forEach((p, i) => {
+        if (orderSemantic[i]) priorityNameToId[orderSemantic[i]] = p.id;
+      });
+      optionsWithPOD.priorityNameToId = priorityNameToId;
     }
     const result: UploadResult = {
       total: rows.length,
